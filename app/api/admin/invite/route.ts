@@ -28,6 +28,23 @@ export async function POST(request: Request) {
   const { email, firstName, lastName, role } = parsed.data;
   const admin = createAdminClient();
 
+  // Block re-inviting an email that's already registered - each account
+  // holds exactly one role (see `profiles.role`), so "already exists for
+  // this role" and "already exists at all" are the same check here.
+  const { data: existing } = await admin
+    .from("profiles")
+    .select("role")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (existing) {
+    const message =
+      existing.role === role
+        ? `${email} is already registered as a ${role}.`
+        : `${email} is already registered as a ${existing.role}. One account can only hold one role - invite a different email address if you need to test both roles.`;
+    return NextResponse.json({ error: message }, { status: 409 });
+  }
+
   const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
     data: { first_name: firstName, last_name: lastName, role },
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
