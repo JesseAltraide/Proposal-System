@@ -76,6 +76,22 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
         Relationships: [];
       };
+      user_roles: {
+        Row: {
+          id: string;
+          user_id: string;
+          role: UserRole;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          role: UserRole;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["user_roles"]["Insert"]>;
+        Relationships: [];
+      };
       proposals: {
         Row: {
           id: string;

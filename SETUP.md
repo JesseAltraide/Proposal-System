@@ -10,8 +10,8 @@ real flow end-to-end. Do these in order.
 2. Project Settings → API → copy the **Project URL**, **anon public key**,
    and **service_role key** into `.env.local` (`NEXT_PUBLIC_SUPABASE_URL`,
    `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`).
-3. SQL Editor → run `supabase/migrations/0001_init.sql`, then
-   `supabase/migrations/0002_storage.sql`, in that order.
+3. SQL Editor → run every file in `supabase/migrations/` in filename order
+   (0001 through the latest, e.g. `0007_multi_role_accounts.sql`).
 4. **Wire up the custom access-token hook** (can't be done via SQL alone):
    Authentication → Hooks → "Customize Access Token (JWT) Claims hook" →
    select `public.custom_access_token_hook` → Enable. This is what puts

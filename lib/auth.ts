@@ -60,3 +60,12 @@ export async function requireRole(role: UserRole): Promise<CurrentUser> {
   if (user.role !== role) redirect("/");
   return user;
 }
+
+// Every role this account has been granted (see 0007_multi_role_accounts.sql),
+// not just the one currently active in profiles.role/the JWT - used to drive
+// the role-switcher in the nav bar.
+export const getGrantedRoles = cache(async (userId: string): Promise<UserRole[]> => {
+  const supabase = await createClient();
+  const { data } = await supabase.from("user_roles").select("role").eq("user_id", userId);
+  return (data ?? []).map((r) => r.role);
+});
