@@ -48,13 +48,20 @@ export function NavBar({
       return;
     }
 
-    // profiles.role changed server-side, but the JWT still carries the old
-    // user_role claim until refreshed - force that now so RLS and
-    // requireRole() see the new role immediately, not after next sign-in.
+    // profiles.role changed server-side and page routing (requireRole) reads
+    // that fresh from the DB, not the JWT, so navigation doesn't need to wait
+    // on a token refresh. Best-effort refresh the JWT's user_role claim too,
+    // for RLS-gated queries the new page makes - but race it against a
+    // timeout so a hung/slow refreshSession() call (observed in practice)
+    // can never leave the button stuck on "Switching..." forever.
     const supabase = createClient();
-    await supabase.auth.refreshSession();
+    await Promise.race([
+      supabase.auth.refreshSession().catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]);
     router.push(ROLE_HOME[otherRole]);
     router.refresh();
+    setSwitching(false);
   }
 
   return (
