@@ -4,13 +4,14 @@ import { renderProposalPdf } from "@/lib/pdf";
 import { generateVerificationCode, hashCode, expiryDate } from "@/lib/access-grant";
 import { clientVerificationEmail, clientDeliveryEmail, sendMail } from "@/lib/email";
 import { formatFullName } from "@/lib/names";
+import { getAppUrl } from "@/lib/app-url";
 import type { Database } from "@/lib/supabase/database.types";
 
 type Proposal = Database["public"]["Tables"]["proposals"]["Row"];
 type Section = Database["public"]["Tables"]["proposal_sections"]["Row"];
 type Admin = ReturnType<typeof createAdminClient>;
 
-const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+const appUrl = getAppUrl;
 
 // Extracted from the original approve/route.ts (which used to inline all of
 // this) so the exact same client-delivery pipeline can be re-triggered on

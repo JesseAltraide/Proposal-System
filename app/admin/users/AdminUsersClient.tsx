@@ -107,6 +107,89 @@ export function InviteUserForm() {
   );
 }
 
+// Grants an additional role onto an EXISTING account - the click-to-upgrade
+// flow, deliberately separate from InviteUserForm above. No name field: the
+// person's name is already on file, so there's nothing to re-enter and no
+// risk of a differently-typed name during a "grant" silently going nowhere
+// (which is exactly the confusing case the old invite-form-for-existing-
+// emails path allowed).
+export function GrantRoleButton({
+  userId,
+  missingRoles,
+}: {
+  userId: string;
+  missingRoles: UserRole[];
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [role, setRole] = useState<UserRole>(missingRoles[0]);
+  const { busy, run } = useGuardedAction();
+  const [error, setError] = useState<string | null>(null);
+
+  if (missingRoles.length === 0) return null;
+
+  async function handleGrant() {
+    await run(async () => {
+      setError(null);
+      const { ok, body } = await apiFetch(`/api/admin/users/${userId}/grant-role`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (!ok) {
+        setError(apiErrorMessage(body, "Failed to grant role."));
+        return;
+      }
+      setOpen(false);
+      router.refresh();
+    });
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+      >
+        Grant Role
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {error && <span className="text-xs text-red-600">{error}</span>}
+      <div className="flex items-center gap-1">
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value as UserRole)}
+          className="rounded-md border border-neutral-300 px-2 py-1 text-xs capitalize"
+        >
+          {missingRoles.map((r) => (
+            <option key={r} value={r} className="capitalize">
+              {r}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={handleGrant}
+          disabled={busy}
+          className="rounded-md bg-neutral-900 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+        >
+          {busy ? "Granting..." : "Confirm"}
+        </button>
+        <button
+          onClick={() => setOpen(false)}
+          disabled={busy}
+          className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function DeleteUserButton({ userId, fullName }: { userId: string; fullName: string }) {
   const router = useRouter();
   const { busy, run } = useGuardedAction();

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rejectSchema } from "@/lib/proposal/schema";
 import { rejectedEmail, sendMail } from "@/lib/email";
+import { getAppUrl } from "@/lib/app-url";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const approver = await requireRole("approver");
@@ -62,7 +63,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     note,
   });
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = getAppUrl();
   const { subject, html } = rejectedEmail({
     proposalId: id,
     companyName: proposal.company_name ?? "",

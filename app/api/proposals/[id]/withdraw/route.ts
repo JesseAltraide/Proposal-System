@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { withdrawSchema } from "@/lib/proposal/schema";
 import { withdrawnEmail, sendMail } from "@/lib/email";
+import { getAppUrl } from "@/lib/app-url";
 
 // Salesperson pulls a proposal back out of an approver's queue, before a
 // decision has been made - only allowed from `pending_approval` (not
@@ -56,7 +57,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     companyName: proposal.company_name ?? "",
     salespersonName: proposal.salesperson_name ?? "",
     reason,
-    appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+    appUrl: getAppUrl(),
   });
 
   for (const approver of approvers ?? []) {

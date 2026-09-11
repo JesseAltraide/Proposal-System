@@ -11,6 +11,7 @@ import {
 } from "@/lib/proposal/sections";
 import { generateProposalSections } from "@/lib/anthropic";
 import { generationCompleteEmail, sendMail } from "@/lib/email";
+import { getAppUrl } from "@/lib/app-url";
 import { extractTranscriptText, isSupportedTranscriptFile } from "@/lib/proposal/transcript-parser";
 import type { SectionKey } from "@/lib/supabase/database.types";
 
@@ -177,7 +178,7 @@ export async function POST(request: Request) {
   const { subject, html } = generationCompleteEmail({
     proposalId: proposal.id,
     companyName: values.company_name,
-    appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+    appUrl: getAppUrl(),
   });
   const result = await sendMail({ to: user.email, subject, html });
 

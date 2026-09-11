@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { approvalRequestedEmail, sendMail } from "@/lib/email";
+import { getAppUrl } from "@/lib/app-url";
 
 // Lets the salesperson nudge approvers about a proposal that's been sitting
 // in pending_approval - re-sends the same approval-requested email.
@@ -23,7 +24,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const admin = createAdminClient();
   const { data: approvers } = await admin.from("profiles").select("id, email").eq("role", "approver");
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = getAppUrl();
   const { subject, html } = approvalRequestedEmail({
     proposalId: id,
     clientName: `${proposal.client_first_name ?? ""} ${proposal.client_last_name ?? ""}`.trim(),

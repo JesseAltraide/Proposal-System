@@ -1,6 +1,6 @@
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { InviteUserForm, DeleteUserButton } from "./AdminUsersClient";
+import { InviteUserForm, GrantRoleButton, DeleteUserButton } from "./AdminUsersClient";
 import { formatFullName } from "@/lib/names";
 import type { UserRole } from "@/lib/supabase/database.types";
 
@@ -42,8 +42,9 @@ export default async function AdminUsersPage() {
       <div>
         <h1 className="mb-1 text-lg font-semibold text-neutral-900">Manage Users</h1>
         <p className="mb-4 text-sm text-neutral-500">
-          Admin-only. Invite new accounts or grant an existing account another role, and remove
-          accounts that have no proposals, approvals, or reviews tied to them.
+          Admin-only. Invite brand-new accounts below - to grant an existing account another role,
+          use the "Grant Role" button on their row instead. Accounts can only be removed if they have
+          no proposals, approvals, or reviews tied to them.
         </p>
         <InviteUserForm />
       </div>
@@ -96,7 +97,13 @@ export default async function AdminUsersPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {p.id !== actor.id && <DeleteUserButton userId={p.id} fullName={fullName} />}
+                      <div className="flex items-start justify-end gap-2">
+                        <GrantRoleButton
+                          userId={p.id}
+                          missingRoles={ROLE_ORDER.filter((r) => !userRoles.includes(r))}
+                        />
+                        {p.id !== actor.id && <DeleteUserButton userId={p.id} fullName={fullName} />}
+                      </div>
                     </td>
                   </tr>
                 );

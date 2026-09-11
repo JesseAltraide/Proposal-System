@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { approvedEmail, sendMail } from "@/lib/email";
+import { getAppUrl } from "@/lib/app-url";
 import type { Database } from "@/lib/supabase/database.types";
 
 type Proposal = Database["public"]["Tables"]["proposals"]["Row"];
@@ -91,7 +92,7 @@ async function sendApprovedNotification(
   const { subject, html } = approvedEmail({
     proposalId: proposal.id,
     companyName: proposal.company_name ?? "",
-    appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+    appUrl: getAppUrl(),
   });
 
   const result = salesperson

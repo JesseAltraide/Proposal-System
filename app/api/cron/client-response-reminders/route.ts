@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { clientResponseReminderEmail, sendMail } from "@/lib/email";
+import { getAppUrl } from "@/lib/app-url";
 
 const REMINDER_INTERVAL_DAYS = 3;
 
@@ -49,7 +50,7 @@ export async function GET(request: Request) {
     const { subject, html } = clientResponseReminderEmail({
       proposalId: proposal.id,
       companyName: proposal.company_name ?? "",
-      appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+      appUrl: getAppUrl(),
     });
 
     const result = await sendMail({ to: salesperson.email, subject, html });
