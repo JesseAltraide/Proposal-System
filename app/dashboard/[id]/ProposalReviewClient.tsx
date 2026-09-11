@@ -156,7 +156,7 @@ export function ProposalReviewClient({
           )}
           {missingCount === 0 && scantyCount > 0 && (
             <p className="mb-2 text-sm text-amber-700">
-              {scantyCount} section{scantyCount > 1 ? "s" : ""} may be thin - review before submitting.
+              {scantyCount} section{scantyCount > 1 ? "s" : ""} may need attention (see the note under each) - review before submitting.
             </p>
           )}
           {submitError && <p className="mb-2 text-sm text-red-600">{submitError}</p>}
