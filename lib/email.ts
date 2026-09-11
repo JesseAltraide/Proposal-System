@@ -27,9 +27,10 @@ interface SendMailArgs {
   html: string;
   replyTo?: string;
   displayName?: string;
+  cc?: string;
 }
 
-export async function sendMail({ to, subject, html, replyTo, displayName }: SendMailArgs): Promise<SendResult> {
+export async function sendMail({ to, subject, html, replyTo, displayName, cc }: SendMailArgs): Promise<SendResult> {
   try {
     const from = displayName ? `"${displayName}" <${process.env.GMAIL_USER}>` : process.env.GMAIL_USER;
 
@@ -39,6 +40,7 @@ export async function sendMail({ to, subject, html, replyTo, displayName }: Send
       subject,
       html,
       replyTo,
+      cc,
     });
 
     return { success: true, detail: null };

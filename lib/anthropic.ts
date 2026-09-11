@@ -53,6 +53,8 @@ For EVERY section you draft, also make a judgment call: is the underlying source
 
 If thin, give a one-sentence scanty_reason explaining specifically what's missing (e.g. "recommended approach is named but no stated reasoning connects it to the client's stated goals"). If incoherent, say so explicitly per the rule above, naming which field(s). If the source material is genuinely sufficient and coherent, mark the section "generated" with scanty_reason null.
 
+CRITICAL - content vs scanty_reason are NEVER the same text, and content must NEVER be a refusal. Even when a section is scanty, "content" must still be your best short, honest attempt at drafting that section from whatever is actually there - a brief, generic version if that's all the source material supports. Never write an explanation of why the input is inadequate, a meta-commentary about what's missing, or any sentence starting with something like "the information provided does not yet contain..." into "content" - that explanation belongs ONLY in scanty_reason, and only there. A human reviewing a scanty section needs something to read and improve, not a refusal standing in for a paragraph.
+
 Also report source_fields: the list of intake field names (and "call_transcript" if you drew on it) that actually grounded this specific section's content - not every field in the request, only the ones this section's content is genuinely traceable to.
 
 Do not include markdown headers in section content (the surrounding template already has section headings) - write plain paragraph prose only, matching the tone of a professional services proposal: warm but substantive, no filler platitudes beyond what the reference template itself uses.`;

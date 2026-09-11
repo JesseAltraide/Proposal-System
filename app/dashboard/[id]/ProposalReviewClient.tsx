@@ -140,7 +140,10 @@ export function ProposalReviewClient({
 
         {proposal.status === "approved" && (
           <div className="mt-4 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-            <p className="mb-2">Approved and delivered to the client.</p>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p>Approved and delivered to the client.</p>
+              <SendToClientButton proposalId={proposal.id} />
+            </div>
             <ClientResponseSection proposalId={proposal.id} currentStatus={proposal.client_response_status} />
           </div>
         )}
@@ -184,6 +187,42 @@ export function ProposalReviewClient({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Re-runs the same delivery pipeline that fires automatically on approval -
+// fresh PDF, a NEW access code, both client-facing emails resent. Useful
+// after a failed send (see the red warning above) or if the client says they
+// lost their code. Issuing a fresh grant makes any previously sent code stop
+// matching (see progress.md's access-grant walkthrough), so this is worded
+// as "Resend," not "Send," to be honest that a first send already happened.
+function SendToClientButton({ proposalId }: { proposalId: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<"sent" | "error" | null>(null);
+
+  async function handleClick() {
+    setBusy(true);
+    setResult(null);
+    const { ok } = await apiFetch(`/api/proposals/${proposalId}/send-to-client`, { method: "POST" });
+    setBusy(false);
+    setResult(ok ? "sent" : "error");
+    if (ok) router.refresh();
+  }
+
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      {result === "sent" && <span className="text-xs text-green-700">Resent - new code issued</span>}
+      {result === "error" && <span className="text-xs text-red-600">Failed to resend</span>}
+      <button
+        onClick={handleClick}
+        disabled={busy}
+        title="Sends a new access code to the client - any previously sent code will stop working"
+        className="rounded-md border border-green-300 bg-white px-3 py-1 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50"
+      >
+        {busy ? "Sending..." : "Resend to Client"}
+      </button>
     </div>
   );
 }

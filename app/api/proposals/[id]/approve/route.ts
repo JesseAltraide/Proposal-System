@@ -2,16 +2,12 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { renderProposalPdf } from "@/lib/pdf";
-import { generateVerificationCode, hashCode, expiryDate } from "@/lib/access-grant";
-import { approvedEmail, clientVerificationEmail, clientDeliveryEmail, sendMail } from "@/lib/email";
-import { formatFullName } from "@/lib/names";
+import { sendToClient } from "@/lib/delivery";
+import { approvedEmail, sendMail } from "@/lib/email";
 import type { Database } from "@/lib/supabase/database.types";
 
 type Proposal = Database["public"]["Tables"]["proposals"]["Row"];
 type Section = Database["public"]["Tables"]["proposal_sections"]["Row"];
-
-const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const approver = await requireRole("approver");
@@ -87,134 +83,23 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 // Performance note (progress.md, 2026-09-10): this used to await the PDF
 // render, the access grant insert, and all three emails one after another -
 // every Approve click paid for the full sum of their latencies in series.
-// None of these actually depend on each other except "verification email
-// needs the access grant's code" and "the two client emails need the
-// salesperson's reply-to address" - so the independent groups below run
-// concurrently via Promise.all instead. Each step still logs its own
-// success/failure to delivery_log/notifications exactly as before; only the
-// ordering changed, not the recorded outcome of any individual step.
+// `sendToClient` (lib/delivery.ts) already runs its own independent steps
+// concurrently; the one thing specific to APPROVAL (as opposed to a later
+// manual resend) is the internal "you've been approved" email back to the
+// salesperson, which runs alongside it rather than after it.
 async function runDeliveryPipeline(
   admin: ReturnType<typeof createAdminClient>,
   proposal: Proposal,
   sections: Section[],
 ) {
-  const [pdfUploaded, grantResult, salesperson] = await Promise.all([
-    generateAndStorePdf(admin, proposal, sections),
-    createAccessGrant(admin, proposal),
+  const [pdfUploaded, salesperson] = await Promise.all([
+    sendToClient(admin, proposal, sections),
     admin.from("profiles").select("id, email").eq("id", proposal.created_by).single().then((r) => r.data),
   ]);
 
-  // Decision #21 (progress.md): client-facing emails show the salesperson's
-  // name as display name with their real email as Reply-To - the "verified
-  // company domain" half of that decision isn't achievable under Gmail SMTP
-  // (decision #23's named limitation), but display name + Reply-To still are.
-  const senderDisplayName = proposal.salesperson_name
-    ? `${proposal.salesperson_name} via Koya Talent`
-    : "Koya Talent";
-  const replyTo = salesperson?.email;
-
-  await Promise.all([
-    sendVerificationEmail(admin, proposal, grantResult, senderDisplayName, replyTo),
-    sendClientDeliveryNotification(admin, proposal, senderDisplayName, replyTo),
-    sendApprovedNotification(admin, proposal, salesperson),
-  ]);
+  await sendApprovedNotification(admin, proposal, salesperson);
 
   return pdfUploaded;
-}
-
-async function generateAndStorePdf(
-  admin: ReturnType<typeof createAdminClient>,
-  proposal: Proposal,
-  sections: Section[],
-): Promise<boolean> {
-  try {
-    const pdfBuffer = await renderProposalPdf(proposal, sections);
-    const { error: uploadError } = await admin.storage
-      .from("proposal-pdfs")
-      .upload(`${proposal.id}.pdf`, pdfBuffer, { contentType: "application/pdf", upsert: true });
-
-    if (uploadError) throw uploadError;
-    await admin.from("delivery_log").insert({ proposal_id: proposal.id, event_type: "pdf_generated", status: "success" });
-    return true;
-  } catch (err) {
-    await admin.from("delivery_log").insert({
-      proposal_id: proposal.id,
-      event_type: "pdf_generated",
-      status: "failed",
-      detail: err instanceof Error ? err.message : "Unknown PDF generation error",
-    });
-    return false;
-  }
-}
-
-// Safe to run independently of the PDF step - the verification endpoint
-// checks status === 'approved' regardless, see progress.md decision #20.
-async function createAccessGrant(admin: ReturnType<typeof createAdminClient>, proposal: Proposal) {
-  const code = generateVerificationCode();
-  const { error } = await admin.from("access_grants").insert({
-    proposal_id: proposal.id,
-    client_email: proposal.client_email ?? "",
-    verification_code_hash: hashCode(code),
-    expires_at: expiryDate().toISOString(),
-  });
-  return { code, error };
-}
-
-async function sendVerificationEmail(
-  admin: ReturnType<typeof createAdminClient>,
-  proposal: Proposal,
-  grantResult: { code: string; error: { message: string } | null },
-  senderDisplayName: string,
-  replyTo: string | undefined,
-) {
-  if (grantResult.error) {
-    await admin.from("delivery_log").insert({
-      proposal_id: proposal.id,
-      event_type: "access_code_sent",
-      status: "failed",
-      detail: grantResult.error.message,
-    });
-    return;
-  }
-  if (!proposal.client_email) return;
-
-  const { subject, html } = clientVerificationEmail({
-    companyName: proposal.company_name ?? "",
-    code: grantResult.code,
-    appUrl: appUrl(),
-    proposalId: proposal.id,
-  });
-  const result = await sendMail({ to: proposal.client_email, subject, html, displayName: senderDisplayName, replyTo });
-  await admin.from("delivery_log").insert({
-    proposal_id: proposal.id,
-    event_type: "access_code_sent",
-    status: result.success ? "success" : "failed",
-    detail: result.detail,
-  });
-}
-
-async function sendClientDeliveryNotification(
-  admin: ReturnType<typeof createAdminClient>,
-  proposal: Proposal,
-  senderDisplayName: string,
-  replyTo: string | undefined,
-) {
-  if (!proposal.client_email) return;
-
-  const deliveryContent = clientDeliveryEmail({
-    clientName: formatFullName(proposal.client_first_name ?? "", proposal.client_last_name ?? ""),
-    companyName: proposal.company_name ?? "",
-    salespersonName: proposal.salesperson_name ?? "",
-    proposalId: proposal.id,
-    appUrl: appUrl(),
-  });
-  const result = await sendMail({ to: proposal.client_email, ...deliveryContent, displayName: senderDisplayName, replyTo });
-  await admin.from("delivery_log").insert({
-    proposal_id: proposal.id,
-    event_type: "client_notification_sent",
-    status: result.success ? "success" : "failed",
-    detail: result.detail,
-  });
 }
 
 async function sendApprovedNotification(
@@ -225,7 +110,7 @@ async function sendApprovedNotification(
   const { subject, html } = approvedEmail({
     proposalId: proposal.id,
     companyName: proposal.company_name ?? "",
-    appUrl: appUrl(),
+    appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
   });
 
   const result = salesperson
