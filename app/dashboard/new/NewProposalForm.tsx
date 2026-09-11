@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useGuardedAction } from "@/lib/use-guarded-action";
 import {
   CONTENT_FIELDS as OPTIONAL_FIELDS,
   FIELD_LABELS,
@@ -57,7 +58,7 @@ export function NewProposalForm({ salespersonName }: { salespersonName: string }
   const [form, setForm] = useState<FormState>(initialState);
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [touched, setTouched] = useState<Partial<Record<IntakeFieldKey, boolean>>>({});
-  const [submitting, setSubmitting] = useState(false);
+  const { busy: submitting, run } = useGuardedAction();
   const [error, setError] = useState<string | null>(null);
 
   const [csvRows, setCsvRows] = useState<{ headers: string[]; rows: string[][] } | null>(null);
@@ -110,30 +111,29 @@ export function NewProposalForm({ salespersonName }: { salespersonName: string }
       return;
     }
 
-    setSubmitting(true);
-    setError(null);
+    await run(async () => {
+      setError(null);
 
-    const formData = new FormData();
-    for (const [key, value] of Object.entries(form)) {
-      formData.set(key, value);
-    }
-    if (transcriptFile) {
-      formData.set("call_transcript_file", transcriptFile);
-    }
+      const formData = new FormData();
+      for (const [key, value] of Object.entries(form)) {
+        formData.set(key, value);
+      }
+      if (transcriptFile) {
+        formData.set("call_transcript_file", transcriptFile);
+      }
 
-    const { ok, body } = await apiFetch<{ id: string }>("/api/proposals", {
-      method: "POST",
-      body: formData,
+      const { ok, body } = await apiFetch<{ id: string }>("/api/proposals", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!ok) {
+        setError(apiErrorMessage(body, "Failed to create proposal."));
+        return;
+      }
+
+      router.push(`/dashboard/${body.id}`);
     });
-
-    if (!ok) {
-      setError(apiErrorMessage(body, "Failed to create proposal."));
-      setSubmitting(false);
-      return;
-    }
-
-    const { id } = body;
-    router.push(`/dashboard/${id}`);
   }
 
   return (

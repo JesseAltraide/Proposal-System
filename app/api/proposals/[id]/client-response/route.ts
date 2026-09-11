@@ -43,8 +43,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!proposal || proposal.created_by !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (proposal.status !== "approved") {
-    return NextResponse.json({ error: "Only an approved proposal has a client response to set." }, { status: 400 });
+  if (proposal.status !== "sent") {
+    return NextResponse.json({ error: "Only a proposal that's actually been sent has a client response to set." }, { status: 400 });
   }
 
   const currentStatus = proposal.client_response_status ?? "pending";

@@ -17,7 +17,7 @@ export default async function AllProposalsPage() {
   const { data: proposals } = await supabase
     .from("proposals")
     .select(
-      "id, company_name, client_first_name, client_last_name, salesperson_name, status, client_response_status, approved_at, updated_at",
+      "id, company_name, client_first_name, client_last_name, salesperson_name, status, client_response_status, sent_at, updated_at",
     )
     .order("updated_at", { ascending: false });
 
@@ -58,7 +58,7 @@ export default async function AllProposalsPage() {
                     <ClientResponseBadge
                       status={p.client_response_status}
                       proposalStatus={p.status}
-                      approvedAt={p.approved_at}
+                      sentAt={p.sent_at}
                     />
                   </td>
                   <td className="px-4 py-3 text-neutral-500">{new Date(p.updated_at).toLocaleDateString()}</td>

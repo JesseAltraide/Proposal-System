@@ -7,12 +7,13 @@
 // generic constraints silently collapse Row/Insert/Update to `never`
 // without them.
 
-export type UserRole = "salesperson" | "approver";
+export type UserRole = "salesperson" | "approver" | "admin";
 
 export type ProposalStatus =
   | "draft"
   | "pending_approval"
   | "approved"
+  | "sent"
   | "rejected"
   | "client_rejected"
   | "awaiting_reproposal"
@@ -47,7 +48,8 @@ export type NotificationEventType =
   | "client_rejection_flagged"
   | "revision_unlocked"
   | "client_response_reminder"
-  | "approval_reminder";
+  | "approval_reminder"
+  | "withdrawn";
 
 export type RevisionDecision = "pending" | "unlocked" | "declined";
 
@@ -111,8 +113,10 @@ export interface Database {
           recommended_services: string | null;
           call_transcript: string | null;
           approver_note: string | null;
+          withdrawal_reason: string | null;
           client_response_status: ClientResponseStatus | null;
           approved_at: string | null;
+          sent_at: string | null;
           last_client_response_reminder_at: string | null;
           created_at: string;
           updated_at: string;
@@ -132,6 +136,7 @@ export interface Database {
           source_fields: unknown[];
           generation_status: GenerationStatus;
           scanty_reason: string | null;
+          suggestions: string[];
           regeneration_count: number;
           version: number;
           previous_content: string | null;

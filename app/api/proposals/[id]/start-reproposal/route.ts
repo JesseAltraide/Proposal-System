@@ -22,9 +22,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  if (proposal.status !== "approved" || proposal.client_response_status !== "rejected") {
+  if (proposal.status !== "sent" || proposal.client_response_status !== "rejected") {
     return NextResponse.json(
-      { error: "Mark the client response as rejected on an approved proposal before starting a reproposal." },
+      { error: "Mark the client response as rejected on a sent proposal before starting a reproposal." },
       { status: 400 },
     );
   }
@@ -35,7 +35,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     .from("proposals")
     .update({ status: "awaiting_reproposal", client_response_status: "pending" })
     .eq("id", id)
-    .eq("status", "approved")
+    .eq("status", "sent")
     .eq("client_response_status", "rejected")
     .select()
     .single();

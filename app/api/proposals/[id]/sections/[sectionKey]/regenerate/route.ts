@@ -6,6 +6,10 @@ import { missingFieldsForSection, FIELD_LABELS, SECTION_ORDER } from "@/lib/prop
 import { generateProposalSections } from "@/lib/anthropic";
 import type { SectionKey } from "@/lib/supabase/database.types";
 
+// See app/api/proposals/route.ts for why this matters - same reasoning
+// applies here, this route calls Claude too.
+export const maxDuration = 60;
+
 const REGEN_CAP = 5;
 
 export async function POST(
@@ -108,6 +112,7 @@ export async function POST(
       generation_status: generated.generation_status,
       scanty_reason: generated.scanty_reason,
       source_fields: generated.source_fields,
+      suggestions: generated.suggestions,
       version: section.version + 1,
       regeneration_count: section.regeneration_count + 1,
     })

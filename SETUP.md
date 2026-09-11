@@ -44,7 +44,7 @@ generation complete, client verification + delivery) go through
 2. Generate an App Password (see link above).
 3. Set `GMAIL_USER` and `GMAIL_APP_PASSWORD` in `.env.local`.
 
-## 4. Seed the first approver
+## 4. Seed the first admin
 
 Once Supabase env vars are real:
 
@@ -52,9 +52,10 @@ Once Supabase env vars are real:
 npm run seed:admin -- you@example.com "a-strong-password" "Your Name"
 ```
 
-This creates the first approver account **directly** (not via invite), per
-full-flow.md Stage 0. From then on, that approver invites everyone else via
-`/approvals/invite`.
+This creates the first **admin** account directly (not via invite). An admin
+only does user management - it does not review proposals itself. From then
+on, that admin invites everyone else (including at least one approver) at
+`/admin/users`.
 
 ## 5. Run it
 
@@ -62,8 +63,9 @@ full-flow.md Stage 0. From then on, that approver invites everyone else via
 npm run dev
 ```
 
-Sign in at `/login` with the seeded approver account, invite a salesperson,
-have them create a proposal at `/dashboard/new`.
+Sign in at `/login` with the seeded admin account, invite an approver and a
+salesperson from `/admin/users`, then have the salesperson create a proposal
+at `/dashboard/new`.
 
 ## Known limitation (see progress.md decision #23)
 

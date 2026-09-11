@@ -19,8 +19,8 @@ export async function GET(request: Request) {
 
   const { data: candidates, error } = await admin
     .from("proposals")
-    .select("id, company_name, created_by, approved_at, last_client_response_reminder_at")
-    .eq("status", "approved")
+    .select("id, company_name, created_by, sent_at, last_client_response_reminder_at")
+    .eq("status", "sent")
     .eq("client_response_status", "pending")
     .or(`last_client_response_reminder_at.lte.${cutoff},last_client_response_reminder_at.is.null`);
 
@@ -28,10 +28,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // The OR above alone doesn't handle "approved_at <= cutoff when no
-  // reminder has ever been sent" - filter that case explicitly here.
+  // The OR above alone doesn't handle "sent_at <= cutoff when no reminder
+  // has ever been sent" - filter that case explicitly here.
   const due = (candidates ?? []).filter((p) => {
-    const anchor = p.last_client_response_reminder_at ?? p.approved_at;
+    const anchor = p.last_client_response_reminder_at ?? p.sent_at;
     return anchor !== null && anchor <= cutoff;
   });
 

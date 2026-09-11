@@ -9,7 +9,7 @@ export default async function DashboardPage() {
   const { data: proposals } = await supabase
     .from("proposals")
     .select(
-      "id, company_name, client_first_name, client_last_name, status, client_response_status, approved_at, created_at, updated_at",
+      "id, company_name, client_first_name, client_last_name, status, client_response_status, sent_at, created_at, updated_at",
     )
     .order("updated_at", { ascending: false });
 
@@ -61,7 +61,7 @@ export default async function DashboardPage() {
                     <ClientResponseBadge
                       status={p.client_response_status}
                       proposalStatus={p.status}
-                      approvedAt={p.approved_at}
+                      sentAt={p.sent_at}
                     />
                   </td>
                   <td className="px-4 py-3 text-neutral-500">

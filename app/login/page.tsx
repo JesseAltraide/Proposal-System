@@ -3,12 +3,14 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { ensureRoleClaim } from "@/lib/supabase/role-sync";
 import { apiFetch, apiErrorMessage } from "@/lib/client-fetch";
 import type { UserRole } from "@/lib/supabase/database.types";
 
 const ROLE_HOME: Record<UserRole, string> = {
   salesperson: "/dashboard",
   approver: "/approvals",
+  admin: "/admin/users",
 };
 
 export default function LoginPage() {
@@ -26,6 +28,7 @@ export default function LoginPage() {
   // re-rendered the disabled button - a fast double-click can otherwise fire
   // two sign-in requests before the first setLoading(true) commits.
   const submittingRef = useRef(false);
+  const enteringRoleRef = useRef(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -63,6 +66,8 @@ export default function LoginPage() {
   }
 
   async function handleChooseRole(role: UserRole) {
+    if (enteringRoleRef.current) return;
+    enteringRoleRef.current = true;
     setEnteringRole(role);
 
     const { ok, body } = await apiFetch("/api/account/switch-role", {
@@ -73,6 +78,23 @@ export default function LoginPage() {
 
     if (!ok) {
       setError(apiErrorMessage(body, "Failed to continue as " + role + "."));
+      enteringRoleRef.current = false;
+      setEnteringRole(null);
+      return;
+    }
+
+    // The session JWT just minted at sign-in reflects whichever role was
+    // active BEFORE this switch, not the one just chosen - RLS reads the
+    // JWT claim, not a fresh profiles lookup, so this must actually be
+    // confirmed before navigating (see lib/supabase/role-sync.ts).
+    const verified = await ensureRoleClaim(role);
+    if (!verified) {
+      setError(
+        "Signed in, but couldn't confirm your session set up correctly as " +
+          role +
+          ". Please try signing in again.",
+      );
+      enteringRoleRef.current = false;
       setEnteringRole(null);
       return;
     }

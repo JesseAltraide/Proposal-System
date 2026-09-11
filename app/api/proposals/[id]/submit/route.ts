@@ -42,7 +42,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   // approver notification twice.
   const { data: updated, error } = await supabase
     .from("proposals")
-    .update({ status: toStatus, approver_note: null })
+    .update({ status: toStatus, approver_note: null, withdrawal_reason: null })
     .eq("id", id)
     .eq("status", fromStatus)
     .select()

@@ -38,3 +38,7 @@ export const rejectSchema = z.object({
   note: z.string().min(1, "A reason is required to reject a proposal"),
 });
 
+export const withdrawSchema = z.object({
+  reason: z.string().min(1, "A reason is required to withdraw a proposal"),
+});
+

@@ -4,6 +4,7 @@ const STYLES: Record<ProposalStatus, string> = {
   draft: "bg-neutral-100 text-neutral-700",
   pending_approval: "bg-amber-100 text-amber-800",
   approved: "bg-green-100 text-green-800",
+  sent: "bg-blue-100 text-blue-800",
   rejected: "bg-red-100 text-red-800",
   client_rejected: "bg-orange-100 text-orange-800",
   awaiting_reproposal: "bg-orange-100 text-orange-800",
@@ -13,7 +14,8 @@ const STYLES: Record<ProposalStatus, string> = {
 const LABELS: Record<ProposalStatus, string> = {
   draft: "Draft",
   pending_approval: "Pending Approval",
-  approved: "Approved",
+  approved: "Approved - Not Sent",
+  sent: "Sent to Client",
   rejected: "Needs Revision",
   client_rejected: "Client Pushback",
   awaiting_reproposal: "Awaiting Reproposal",

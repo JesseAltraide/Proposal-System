@@ -1,6 +1,7 @@
-// Seeds the first approver account directly (not via invite) — per
-// full-flow.md Stage 0: "Admin/approver role is seeded first (one account,
-// created directly, not invited)."
+// Seeds the first admin account directly (not via invite). An admin's only
+// job is user management (invite/delete) - it does not review proposals
+// itself, so a separate approver account still needs inviting afterward
+// from /admin/users.
 //
 // Usage:
 //   node --env-file=.env.local scripts/seed-admin.mjs <email> <password> <first name> <last name>
@@ -30,13 +31,14 @@ const { data, error } = await admin.auth.admin.createUser({
   email,
   password,
   email_confirm: true,
-  user_metadata: { first_name: firstName, last_name: lastName, role: "approver" },
+  user_metadata: { first_name: firstName, last_name: lastName, role: "admin" },
 });
 
 if (error) {
-  console.error("Failed to create admin/approver user:", error.message);
+  console.error("Failed to create admin user:", error.message);
   process.exit(1);
 }
 
-console.log(`Seeded approver account: ${data.user.email} (${data.user.id})`);
+console.log(`Seeded admin account: ${data.user.email} (${data.user.id})`);
+console.log("Sign in and invite an approver + salesperson from /admin/users.");
 console.log("The public.profiles row is created automatically by the on_auth_user_created trigger.");

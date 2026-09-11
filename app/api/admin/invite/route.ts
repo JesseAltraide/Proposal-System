@@ -11,14 +11,16 @@ const inviteSchema = z.object({
   email: z.string().email(),
   firstName: nameSchema,
   lastName: nameSchema,
-  role: z.enum(["salesperson", "approver"]),
+  role: z.enum(["salesperson", "approver", "admin"]),
 });
 
-// Only an existing approver can invite new users (salespeople or more
-// approvers) - matches Stage 0: the seeded admin/approver is the one
-// onboarding everyone else, per full-flow.md.
+// User management moved entirely to the 'admin' role - approvers can no
+// longer invite anyone. The seeded account is now an admin, whose only job
+// is user management (invite/delete); reviewing proposals is a separate
+// role an admin has to invite someone (possibly themselves, via a second
+// email) into.
 export async function POST(request: Request) {
-  await requireRole("approver");
+  await requireRole("admin");
 
   const body = await request.json();
   const parsed = inviteSchema.safeParse(body);

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const switchSchema = z.object({ role: z.enum(["salesperson", "approver"]) });
+const switchSchema = z.object({ role: z.enum(["salesperson", "approver", "admin"]) });
 
 // Switches which of this account's granted roles (user_roles) is the
 // "active" one reflected in profiles.role - and therefore in the JWT, once

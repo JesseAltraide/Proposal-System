@@ -2,26 +2,27 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useGuardedAction } from "@/lib/use-guarded-action";
 import { apiFetch, apiErrorMessage } from "@/lib/client-fetch";
 
 export function ApprovalActions({ proposalId }: { proposalId: string }) {
   const router = useRouter();
   const [rejecting, setRejecting] = useState(false);
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useGuardedAction();
   const [error, setError] = useState<string | null>(null);
 
   async function handleApprove() {
-    setBusy(true);
-    setError(null);
-    const { ok, body } = await apiFetch(`/api/proposals/${proposalId}/approve`, { method: "POST" });
-    setBusy(false);
-    if (!ok) {
-      setError(apiErrorMessage(body, "Failed to approve."));
-      return;
-    }
-    router.push("/approvals");
-    router.refresh();
+    await run(async () => {
+      setError(null);
+      const { ok, body } = await apiFetch(`/api/proposals/${proposalId}/approve`, { method: "POST" });
+      if (!ok) {
+        setError(apiErrorMessage(body, "Failed to approve."));
+        return;
+      }
+      router.push("/approvals");
+      router.refresh();
+    });
   }
 
   async function handleReject() {
@@ -29,20 +30,20 @@ export function ApprovalActions({ proposalId }: { proposalId: string }) {
       setError("A reason is required to reject.");
       return;
     }
-    setBusy(true);
-    setError(null);
-    const { ok, body } = await apiFetch(`/api/proposals/${proposalId}/reject`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ note }),
+    await run(async () => {
+      setError(null);
+      const { ok, body } = await apiFetch(`/api/proposals/${proposalId}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note }),
+      });
+      if (!ok) {
+        setError(apiErrorMessage(body, "Failed to reject."));
+        return;
+      }
+      router.push("/approvals");
+      router.refresh();
     });
-    setBusy(false);
-    if (!ok) {
-      setError(apiErrorMessage(body, "Failed to reject."));
-      return;
-    }
-    router.push("/approvals");
-    router.refresh();
   }
 
   return (

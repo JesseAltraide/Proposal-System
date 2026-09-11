@@ -14,6 +14,14 @@ import { generationCompleteEmail, sendMail } from "@/lib/email";
 import { extractTranscriptText, isSupportedTranscriptFile } from "@/lib/proposal/transcript-parser";
 import type { SectionKey } from "@/lib/supabase/database.types";
 
+// Without this, Vercel's own default function timeout could kill this route
+// BEFORE lib/anthropic.ts's own 45s request timeout (x up to 2 attempts) has
+// a chance to throw a catchable error - an ungraceful platform timeout
+// instead of the friendly "Claude isn't responding" message this route
+// already handles, and no guarantee the orphaned proposal row gets cleaned
+// up either. 60s covers the worst case with room to spare.
+export const maxDuration = 60;
+
 // Stage 1-3: create the proposal, run Check A, and (if enough sections
 // qualify) run the single batched Claude generation call.
 export async function POST(request: Request) {
@@ -138,6 +146,7 @@ export async function POST(request: Request) {
         source_fields: generatedSection.source_fields,
         generation_status: generatedSection.generation_status,
         scanty_reason: generatedSection.scanty_reason,
+        suggestions: generatedSection.suggestions,
         version: 1,
         regeneration_count: 0,
       };
@@ -150,6 +159,7 @@ export async function POST(request: Request) {
       source_fields: [],
       generation_status: "missing" as const,
       scanty_reason: null,
+      suggestions: [],
       version: 1,
       regeneration_count: 0,
     };

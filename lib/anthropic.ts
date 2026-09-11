@@ -35,6 +35,7 @@ export interface GeneratedSection {
   generation_status: Extract<GenerationStatus, "generated" | "scanty">;
   scanty_reason: string | null;
   source_fields: string[];
+  suggestions: string[];
 }
 
 const SYSTEM_PROMPT = `You are drafting sections of a client-facing sales proposal for Koya Talent, a professional services company. You will be given intake fields from a completed sales call and, optionally, a call transcript. You must draft ONLY the sections listed in the request (sections with missing required fields are never sent to you).
@@ -56,6 +57,10 @@ If thin, give a one-sentence scanty_reason explaining specifically what's missin
 CRITICAL - content vs scanty_reason are NEVER the same text, and content must NEVER be a refusal. Even when a section is scanty, "content" must still be your best short, honest attempt at drafting that section from whatever is actually there - a brief, generic version if that's all the source material supports. Never write an explanation of why the input is inadequate, a meta-commentary about what's missing, or any sentence starting with something like "the information provided does not yet contain..." into "content" - that explanation belongs ONLY in scanty_reason, and only there. A human reviewing a scanty section needs something to read and improve, not a refusal standing in for a paragraph.
 
 Also report source_fields: the list of intake field names (and "call_transcript" if you drew on it) that actually grounded this specific section's content - not every field in the request, only the ones this section's content is genuinely traceable to.
+
+For EVERY section (generated or scanty), also give "suggestions": an array of AT MOST 3 short bullet-point notes on how this specific section could be made better overall. Grammar, awkward phrasing, a transition that doesn't flow, tone drift, repetition with another section, or a sentence disconnected from the section's main point are all fair game - those are examples of areas to look at, not an exhaustive checklist, so also flag anything else genuinely worth improving about the section as written (structure, persuasiveness, how well it lands the client's actual goal, etc.). Each bullet should be one brief sentence, the kind of thing an editor jots in a margin. Examples: "Second sentence is a run-on - split it for clarity.", "Opens very similarly to the Introduction section - vary the phrasing.", "Leads with the method before the client benefit - consider flipping the order." If a section genuinely reads well with nothing worth flagging, return fewer than 3 (including zero) rather than inventing a nitpick - do not pad this array just to fill it.
+
+Suggestions must never introduce or reference a new fact, number, service, or detail that isn't already present in "content" itself or directly implied by the source fields - a suggestion can point out that something is missing or thin, but it must never invent the missing specific itself (that would be the same violation as inventing it inside "content").
 
 Do not include markdown headers in section content (the surrounding template already has section headings) - write plain paragraph prose only, matching the tone of a professional services proposal: warm but substantive, no filler platitudes beyond what the reference template itself uses.`;
 
@@ -84,8 +89,13 @@ const RETURN_SECTIONS_TOOL: Anthropic.Tool = {
               type: "array",
               items: { type: "string" },
             },
+            suggestions: {
+              type: "array",
+              items: { type: "string" },
+              maxItems: 3,
+            },
           },
-          required: ["section_key", "content", "generation_status", "scanty_reason", "source_fields"],
+          required: ["section_key", "content", "generation_status", "scanty_reason", "source_fields", "suggestions"],
         },
       },
     },
@@ -93,8 +103,21 @@ const RETURN_SECTIONS_TOOL: Anthropic.Tool = {
   },
 };
 
+// The SDK's own default timeout is 10 minutes, WITH automatic retries on top
+// of that - meaning a genuinely dead/hanging connection (network drops mid-
+// request) could sit for far longer than any reasonable serverless function
+// duration before ever throwing an error the route's try/catch could react
+// to. Vercel would kill the function first, externally, as an ungraceful
+// platform timeout - not our friendly "Claude isn't responding" message, and
+// not something that reliably cleans up an orphaned proposal row either.
+// Setting an explicit, much shorter timeout here means a real network outage
+// throws a catchable error well within the routes' own `maxDuration` budget
+// (see app/api/proposals/route.ts and the regenerate route), so the existing
+// error handling always gets a real chance to run.
+const REQUEST_TIMEOUT_MS = 45_000;
+
 function client() {
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: REQUEST_TIMEOUT_MS, maxRetries: 1 });
 }
 
 function buildIntakeBlock(values: GenerationInput, sectionsToGenerate: SectionKey[]) {

@@ -27,7 +27,10 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
 
   const { data: proposal } = await admin.from("proposals").select("id, status").eq("id", proposalId).single();
-  if (!proposal || proposal.status !== "approved") {
+  // Must be `sent`, not just `approved` - an approved-but-not-yet-sent
+  // proposal has no PDF/grant a client should ever be able to reach, even if
+  // they somehow guessed the URL (approval alone no longer creates either).
+  if (!proposal || proposal.status !== "sent") {
     await admin.from("delivery_log").insert({
       proposal_id: proposalId,
       event_type: "access_verified",

@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { ensureRoleClaim } from "@/lib/supabase/role-sync";
 import { apiFetch, apiErrorMessage } from "@/lib/client-fetch";
+import { useGuardedAction } from "@/lib/use-guarded-action";
 import type { UserRole } from "@/lib/supabase/database.types";
 
 const ROLE_HOME: Record<UserRole, string> = {
   salesperson: "/dashboard",
   approver: "/approvals",
+  admin: "/admin/users",
 };
 
 export function NavBar({
@@ -22,46 +24,57 @@ export function NavBar({
   grantedRoles?: UserRole[];
 }) {
   const router = useRouter();
-  const [switching, setSwitching] = useState(false);
-  const otherRole = grantedRoles.find((r) => r !== role);
+  const { busy: switching, run: runSwitch } = useGuardedAction();
+  const { busy: signingOut, run: runSignOut } = useGuardedAction();
+  // Usually one other role, but an account can now hold all three
+  // (admin+approver+salesperson), so this offers every granted role that
+  // isn't the currently-active one, not just a single toggle target.
+  const otherRoles = grantedRoles.filter((r) => r !== role);
 
   async function handleSignOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
+    await runSignOut(async () => {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      router.push("/login");
+      router.refresh();
+    });
   }
 
-  async function handleSwitchRole() {
-    if (!otherRole || switching) return;
-    setSwitching(true);
+  async function handleSwitchRole(target: UserRole) {
+    await runSwitch(async () => {
+      const { ok, body } = await apiFetch("/api/account/switch-role", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: target }),
+      });
 
-    const { ok, body } = await apiFetch("/api/account/switch-role", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role: otherRole }),
+      if (!ok) {
+        alert(apiErrorMessage(body, "Failed to switch role."));
+        return;
+      }
+
+      // profiles.role changed server-side, but RLS policies on the pages
+      // we're about to visit read the role from the JWT claim, not a fresh
+      // DB lookup - so the token actually needs to carry the new role before
+      // navigating, not just "eventually." A silently-stale claim here
+      // doesn't error, it just quietly scopes queries to the OLD role (see
+      // lib/supabase/role-sync.ts for the real bug this caused: a
+      // newly-switched approver seeing an empty Approval Queue with no error
+      // at all).
+      const verified = await ensureRoleClaim(target);
+
+      if (!verified) {
+        alert(
+          "Switched, but couldn't confirm your session updated correctly. Please sign out and sign back in as " +
+            target +
+            " to make sure everything loads correctly.",
+        );
+        return;
+      }
+
+      router.push(ROLE_HOME[target]);
+      router.refresh();
     });
-
-    if (!ok) {
-      alert(apiErrorMessage(body, "Failed to switch role."));
-      setSwitching(false);
-      return;
-    }
-
-    // profiles.role changed server-side and page routing (requireRole) reads
-    // that fresh from the DB, not the JWT, so navigation doesn't need to wait
-    // on a token refresh. Best-effort refresh the JWT's user_role claim too,
-    // for RLS-gated queries the new page makes - but race it against a
-    // timeout so a hung/slow refreshSession() call (observed in practice)
-    // can never leave the button stuck on "Switching..." forever.
-    const supabase = createClient();
-    await Promise.race([
-      supabase.auth.refreshSession().catch(() => {}),
-      new Promise((resolve) => setTimeout(resolve, 2000)),
-    ]);
-    router.push(ROLE_HOME[otherRole]);
-    router.refresh();
-    setSwitching(false);
   }
 
   return (
@@ -86,30 +99,34 @@ export function NavBar({
             <Link href="/approvals/activity" prefetch={false} className="text-sm text-neutral-600 hover:text-neutral-900">
               Activity Log
             </Link>
-            <Link href="/approvals/invite" prefetch={false} className="text-sm text-neutral-600 hover:text-neutral-900">
-              Invite User
-            </Link>
           </>
+        )}
+        {role === "admin" && (
+          <Link href="/admin/users" prefetch={false} className="text-sm text-neutral-600 hover:text-neutral-900">
+            Manage Users
+          </Link>
         )}
       </div>
       <div className="flex items-center gap-4">
         <span className="text-sm text-neutral-500">
           {fullName} · <span className="capitalize">{role}</span>
         </span>
-        {otherRole && (
+        {otherRoles.map((target) => (
           <button
-            onClick={handleSwitchRole}
+            key={target}
+            onClick={() => handleSwitchRole(target)}
             disabled={switching}
             className="rounded-md border border-neutral-300 px-3 py-1 text-sm capitalize text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
           >
-            {switching ? "Switching..." : `Switch to ${otherRole}`}
+            {switching ? "Switching..." : `Switch to ${target}`}
           </button>
-        )}
+        ))}
         <button
           onClick={handleSignOut}
-          className="rounded-md border border-neutral-300 px-3 py-1 text-sm text-neutral-700 hover:bg-neutral-50"
+          disabled={signingOut}
+          className="rounded-md border border-neutral-300 px-3 py-1 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
         >
-          Sign out
+          {signingOut ? "Signing out..." : "Sign out"}
         </button>
       </div>
     </nav>

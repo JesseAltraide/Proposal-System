@@ -71,13 +71,30 @@ export function approvalRequestedEmail(params: {
   };
 }
 
+export function withdrawnEmail(params: {
+  companyName: string;
+  salespersonName: string;
+  reason: string;
+  appUrl: string;
+}) {
+  return {
+    subject: `Withdrawn: proposal for ${params.companyName}`,
+    html: `
+      <p><strong>${params.salespersonName}</strong> withdrew their proposal for <strong>${params.companyName}</strong> from your approval queue - no action needed from you.</p>
+      <p><strong>Reason given:</strong></p>
+      <blockquote>${params.reason}</blockquote>
+      <p><a href="${params.appUrl}/approvals/all">View all proposals</a></p>
+    `,
+  };
+}
+
 export function approvedEmail(params: { proposalId: string; companyName: string; appUrl: string }) {
   return {
     subject: `Approved: proposal for ${params.companyName}`,
     html: `
       <p>Your proposal for <strong>${params.companyName}</strong> has been approved.</p>
-      <p>The client verification email and delivery pipeline have been triggered automatically.</p>
-      <p><a href="${params.appUrl}/dashboard/${params.proposalId}">View the proposal</a></p>
+      <p>It has NOT been sent to the client yet - open it and click "Send to Client" when you're ready.</p>
+      <p><a href="${params.appUrl}/dashboard/${params.proposalId}">Open the proposal</a></p>
     `,
   };
 }

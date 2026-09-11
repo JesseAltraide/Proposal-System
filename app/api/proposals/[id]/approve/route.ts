@@ -2,12 +2,10 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendToClient } from "@/lib/delivery";
 import { approvedEmail, sendMail } from "@/lib/email";
 import type { Database } from "@/lib/supabase/database.types";
 
 type Proposal = Database["public"]["Tables"]["proposals"]["Row"];
-type Section = Database["public"]["Tables"]["proposal_sections"]["Row"];
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const approver = await requireRole("approver");
@@ -47,16 +45,17 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   // though the WHERE clause matched. RLS's job here is row visibility for
   // browsing (decision #31), not gating an already-authorized, already
   // concurrency-guarded mutation.
+  // Approval no longer auto-sends anything to the client (user's explicit
+  // change) - it only records the decision and lets the salesperson know.
+  // client_response_status/last_client_response_reminder_at are NOT reset
+  // here anymore either - those only make sense once the proposal is
+  // actually `sent` (see send-to-client/route.ts), not merely `approved`.
   const admin = createAdminClient();
   const { data: updated, error } = await admin
     .from("proposals")
     .update({
       status: "approved",
-      // Decision #41: (re)start the client-response tracking cycle on every
-      // approval, including re-approvals after a Stage 8 reproposal.
-      client_response_status: "pending",
       approved_at: new Date().toISOString(),
-      last_client_response_reminder_at: null,
     })
     .eq("id", id)
     .in("status", ["pending_approval", "reproposal_sent"])
@@ -73,33 +72,15 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     decision: "approved",
   });
 
-  const { data: sections } = await admin.from("proposal_sections").select("*").eq("proposal_id", id);
+  const { data: salesperson } = await admin
+    .from("profiles")
+    .select("id, email")
+    .eq("id", updated.created_by)
+    .single();
 
-  await runDeliveryPipeline(admin, updated, sections ?? []);
+  await sendApprovedNotification(admin, updated, salesperson);
 
   return NextResponse.json({ proposal: updated });
-}
-
-// Performance note (progress.md, 2026-09-10): this used to await the PDF
-// render, the access grant insert, and all three emails one after another -
-// every Approve click paid for the full sum of their latencies in series.
-// `sendToClient` (lib/delivery.ts) already runs its own independent steps
-// concurrently; the one thing specific to APPROVAL (as opposed to a later
-// manual resend) is the internal "you've been approved" email back to the
-// salesperson, which runs alongside it rather than after it.
-async function runDeliveryPipeline(
-  admin: ReturnType<typeof createAdminClient>,
-  proposal: Proposal,
-  sections: Section[],
-) {
-  const [pdfUploaded, salesperson] = await Promise.all([
-    sendToClient(admin, proposal, sections),
-    admin.from("profiles").select("id, email").eq("id", proposal.created_by).single().then((r) => r.data),
-  ]);
-
-  await sendApprovedNotification(admin, proposal, salesperson);
-
-  return pdfUploaded;
 }
 
 async function sendApprovedNotification(

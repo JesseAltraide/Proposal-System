@@ -12,6 +12,7 @@ import {
 import { StatusBadge } from "@/app/components/StatusBadge";
 import { formatFullName } from "@/lib/names";
 import { apiFetch, apiErrorMessage } from "@/lib/client-fetch";
+import { useGuardedAction } from "@/lib/use-guarded-action";
 import type { ClientResponseStatus, Database } from "@/lib/supabase/database.types";
 
 type Proposal = Database["public"]["Tables"]["proposals"]["Row"];
@@ -45,29 +46,29 @@ export function ProposalReviewClient({
   const missingCount = sections.filter((s) => s.generation_status === "missing").length;
   const scantyCount = sections.filter((s) => s.generation_status === "scanty").length;
 
-  const [submitting, setSubmitting] = useState(false);
+  const { busy: submitting, run: runSubmit } = useGuardedAction();
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [reminding, setReminding] = useState(false);
+  const { busy: reminding, run: runRemind } = useGuardedAction();
   const [reminderSent, setReminderSent] = useState(false);
 
   async function handleSubmitForApproval() {
-    setSubmitting(true);
-    setSubmitError(null);
-    const { ok, body } = await apiFetch(`/api/proposals/${proposal.id}/submit`, { method: "POST" });
-    setSubmitting(false);
-    if (!ok) {
-      setSubmitError(apiErrorMessage(body, "Failed to submit for approval."));
-      return;
-    }
-    router.refresh();
+    await runSubmit(async () => {
+      setSubmitError(null);
+      const { ok, body } = await apiFetch(`/api/proposals/${proposal.id}/submit`, { method: "POST" });
+      if (!ok) {
+        setSubmitError(apiErrorMessage(body, "Failed to submit for approval."));
+        return;
+      }
+      router.refresh();
+    });
   }
 
   async function handleSendReminder() {
-    setReminding(true);
-    setReminderSent(false);
-    const { ok } = await apiFetch(`/api/proposals/${proposal.id}/remind`, { method: "POST" });
-    setReminding(false);
-    if (ok) setReminderSent(true);
+    await runRemind(async () => {
+      setReminderSent(false);
+      const { ok } = await apiFetch(`/api/proposals/${proposal.id}/remind`, { method: "POST" });
+      if (ok) setReminderSent(true);
+    });
   }
 
   return (
@@ -109,6 +110,12 @@ export function ProposalReviewClient({
           </div>
         )}
 
+        {proposal.status === "draft" && proposal.withdrawal_reason && !proposal.approver_note && (
+          <div className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700">
+            <strong>Withdrawn - your reason:</strong> {proposal.withdrawal_reason}
+          </div>
+        )}
+
         {(proposal.status === "draft" || proposal.status === "awaiting_reproposal") && proposal.approver_note && (
           <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
             <strong>Approver&apos;s note:</strong> {proposal.approver_note}
@@ -116,18 +123,21 @@ export function ProposalReviewClient({
         )}
 
         {(proposal.status === "pending_approval" || proposal.status === "reproposal_sent") && (
-          <div className="mt-4 flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            <span>Waiting on an approver. You&apos;ll get an email once it&apos;s decided.</span>
-            <div className="flex items-center gap-2">
-              {reminderSent && <span className="text-xs text-amber-700">Reminder sent</span>}
-              <button
-                onClick={handleSendReminder}
-                disabled={reminding}
-                className="rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
-              >
-                {reminding ? "Sending..." : "Send Reminder"}
-              </button>
+          <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <div className="flex items-center justify-between">
+              <span>Waiting on an approver. You&apos;ll get an email once it&apos;s decided.</span>
+              <div className="flex items-center gap-2">
+                {reminderSent && <span className="text-xs text-amber-700">Reminder sent</span>}
+                <button
+                  onClick={handleSendReminder}
+                  disabled={reminding}
+                  className="rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                >
+                  {reminding ? "Sending..." : "Send Reminder"}
+                </button>
+              </div>
             </div>
+            {proposal.status === "pending_approval" && <WithdrawSection proposalId={proposal.id} />}
           </div>
         )}
 
@@ -138,13 +148,23 @@ export function ProposalReviewClient({
           </div>
         )}
 
-        {proposal.status === "approved" && (
+        {(proposal.status === "approved" || proposal.status === "sent") && (
           <div className="mt-4 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">
             <div className="mb-2 flex items-center justify-between gap-3">
-              <p>Approved and delivered to the client.</p>
-              <SendToClientButton proposalId={proposal.id} />
+              <p>
+                {proposal.status === "sent"
+                  ? "Approved and sent to the client."
+                  : "Approved - not sent to the client yet."}
+              </p>
+              <SendToClientButton
+                proposalId={proposal.id}
+                clientEmail={proposal.client_email}
+                alreadySent={proposal.status === "sent"}
+              />
             </div>
-            <ClientResponseSection proposalId={proposal.id} currentStatus={proposal.client_response_status} />
+            {proposal.status === "sent" && (
+              <ClientResponseSection proposalId={proposal.id} currentStatus={proposal.client_response_status} />
+            )}
           </div>
         )}
       </div>
@@ -191,37 +211,139 @@ export function ProposalReviewClient({
   );
 }
 
-// Re-runs the same delivery pipeline that fires automatically on approval -
-// fresh PDF, a NEW access code, both client-facing emails resent. Useful
-// after a failed send (see the red warning above) or if the client says they
-// lost their code. Issuing a fresh grant makes any previously sent code stop
-// matching (see progress.md's access-grant walkthrough), so this is worded
-// as "Resend," not "Send," to be honest that a first send already happened.
-function SendToClientButton({ proposalId }: { proposalId: string }) {
+
+// Lets the salesperson pull a proposal back out of an approver's queue
+// before a decision lands - only offered on `pending_approval` (not
+// `reproposal_sent`, a deliberately narrower scope, see the API route's own
+// comment). Requires a reason, same discipline as a rejection, and notifies
+// every approver with it attached.
+function WithdrawSection({ proposalId }: { proposalId: string }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const { busy, run } = useGuardedAction();
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleWithdraw() {
+    if (reason.trim().length === 0) {
+      setError("A reason is required to withdraw.");
+      return;
+    }
+    await run(async () => {
+      setError(null);
+      const { ok, body } = await apiFetch(`/api/proposals/${proposalId}/withdraw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (!ok) {
+        setError(apiErrorMessage(body, "Failed to withdraw."));
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="mt-2 text-xs text-amber-700 underline hover:no-underline"
+      >
+        Withdraw this submission
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-2 border-t border-amber-200 pt-3">
+      <label className="block text-xs font-medium text-amber-800">
+        Reason for withdrawing <span className="text-red-500">*</span>
+      </label>
+      <textarea
+        rows={2}
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        className="w-full rounded-md border border-amber-300 bg-white px-2 py-1.5 text-sm"
+      />
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex gap-2">
+        <button
+          onClick={handleWithdraw}
+          disabled={busy}
+          className="rounded-md bg-amber-700 px-3 py-1 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-50"
+        >
+          {busy ? "Withdrawing..." : "Confirm Withdraw"}
+        </button>
+        <button
+          onClick={() => setOpen(false)}
+          disabled={busy}
+          className="rounded-md border border-amber-300 bg-white px-3 py-1 text-xs text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Approval no longer auto-sends anything - this is now the ONLY way a
+// proposal actually reaches the client. First click (from `approved`) fires
+// the real send and flips status to `sent`; every click after that (already
+// `sent`) is a genuine resend - fresh PDF, a NEW access code, both
+// client-facing emails re-sent. Issuing a fresh grant makes any previously
+// sent code stop matching (see progress.md's access-grant walkthrough), so
+// the label is honest about which one this is rather than always saying
+// "Send." Confirmed before firing either way, since a click here always
+// means a real email goes out to a real client.
+function SendToClientButton({
+  proposalId,
+  clientEmail,
+  alreadySent,
+}: {
+  proposalId: string;
+  clientEmail: string | null;
+  alreadySent: boolean;
+}) {
+  const router = useRouter();
+  const { busy, run } = useGuardedAction();
   const [result, setResult] = useState<"sent" | "error" | null>(null);
 
+  const emailLabel = clientEmail || "the client";
+  const actionWord = alreadySent ? "Resend" : "Send";
+
   async function handleClick() {
-    setBusy(true);
-    setResult(null);
-    const { ok } = await apiFetch(`/api/proposals/${proposalId}/send-to-client`, { method: "POST" });
-    setBusy(false);
-    setResult(ok ? "sent" : "error");
-    if (ok) router.refresh();
+    const confirmed = window.confirm(
+      `${actionWord} this proposal to ${emailLabel}? ` +
+        (alreadySent
+          ? "This issues a new access code - any previously sent code will stop working."
+          : "This emails them an access code and makes the proposal viewable to them for the first time."),
+    );
+    if (!confirmed) return;
+
+    await run(async () => {
+      setResult(null);
+      const { ok } = await apiFetch(`/api/proposals/${proposalId}/send-to-client`, { method: "POST" });
+      setResult(ok ? "sent" : "error");
+      if (ok) router.refresh();
+    });
   }
 
   return (
     <div className="flex shrink-0 items-center gap-2">
-      {result === "sent" && <span className="text-xs text-green-700">Resent - new code issued</span>}
-      {result === "error" && <span className="text-xs text-red-600">Failed to resend</span>}
+      {result === "sent" && <span className="text-xs text-green-700">Sent - new code issued</span>}
+      {result === "error" && <span className="text-xs text-red-600">Failed to send</span>}
       <button
         onClick={handleClick}
         disabled={busy}
-        title="Sends a new access code to the client - any previously sent code will stop working"
+        title={
+          alreadySent
+            ? "Sends a new access code to the client - any previously sent code will stop working"
+            : "Sends the proposal and an access code to the client for the first time"
+        }
         className="rounded-md border border-green-300 bg-white px-3 py-1 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50"
       >
-        {busy ? "Sending..." : "Resend to Client"}
+        {busy ? "Sending..." : `${actionWord} to ${emailLabel}`}
       </button>
     </div>
   );
@@ -247,35 +369,35 @@ function ClientResponseSection({
 }) {
   const router = useRouter();
   const status = currentStatus ?? "pending";
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useGuardedAction();
   const [error, setError] = useState<string | null>(null);
 
   async function setClientResponse(next: "accepted" | "rejected") {
-    setBusy(true);
-    setError(null);
-    const { ok, body } = await apiFetch(`/api/proposals/${proposalId}/client-response`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
+    await run(async () => {
+      setError(null);
+      const { ok, body } = await apiFetch(`/api/proposals/${proposalId}/client-response`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!ok) {
+        setError(apiErrorMessage(body, "Failed to update."));
+        return;
+      }
+      router.refresh();
     });
-    setBusy(false);
-    if (!ok) {
-      setError(apiErrorMessage(body, "Failed to update."));
-      return;
-    }
-    router.refresh();
   }
 
   async function handleReproposal() {
-    setBusy(true);
-    setError(null);
-    const { ok, body } = await apiFetch(`/api/proposals/${proposalId}/start-reproposal`, { method: "POST" });
-    setBusy(false);
-    if (!ok) {
-      setError(apiErrorMessage(body, "Failed to start reproposal."));
-      return;
-    }
-    router.refresh();
+    await run(async () => {
+      setError(null);
+      const { ok, body } = await apiFetch(`/api/proposals/${proposalId}/start-reproposal`, { method: "POST" });
+      if (!ok) {
+        setError(apiErrorMessage(body, "Failed to start reproposal."));
+        return;
+      }
+      router.refresh();
+    });
   }
 
   if (status === "accepted") {
@@ -348,7 +470,7 @@ function SectionCard({
   const router = useRouter();
   const [showCommentBox, setShowCommentBox] = useState(false);
   const [comment, setComment] = useState("");
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useGuardedAction();
   const [error, setError] = useState<string | null>(null);
 
   const requiredFields = REQUIRED_FIELDS[section.section_key];
@@ -357,47 +479,57 @@ function SectionCard({
   const commentRequired = attemptNumber >= REGEN_CAP;
   const showSoftWarning = attemptNumber === SOFT_WARNING_ATTEMPT;
 
-  async function handleRegenerate() {
-    if (commentRequired && comment.trim().length === 0) {
+  // `useSuggestion` folds Claude's own editorial suggestions in as extra
+  // grounding alongside whatever the salesperson typed in the comment box
+  // (if anything) - both are sent, neither replaces the other. Either path
+  // is a real regeneration attempt against the same 5-attempt cap, no
+  // exemption for using the suggestions.
+  async function handleRegenerate(useSuggestion = false) {
+    const suggestionText = section.suggestions.map((s) => `- ${s}`).join("\n");
+    const combinedComment = useSuggestion && section.suggestions.length > 0
+      ? [comment.trim(), suggestionText].filter(Boolean).join("\n\n")
+      : comment;
+
+    if (commentRequired && combinedComment.trim().length === 0) {
       setError("Add context to help Claude regenerate this - required after 4 attempts.");
       return;
     }
-    setBusy(true);
-    setError(null);
-    const { ok, body } = await apiFetch(
-      `/api/proposals/${proposal.id}/sections/${section.section_key}/regenerate`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ comment, expectedVersion: section.version }),
-      },
-    );
-    setBusy(false);
-    if (!ok) {
-      setError(apiErrorMessage(body, "Regeneration failed - please refresh and try again."));
-      return;
-    }
-    setComment("");
-    setShowCommentBox(false);
-    router.refresh();
+    await run(async () => {
+      setError(null);
+      const { ok, body } = await apiFetch(
+        `/api/proposals/${proposal.id}/sections/${section.section_key}/regenerate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ comment: combinedComment, expectedVersion: section.version }),
+        },
+      );
+      if (!ok) {
+        setError(apiErrorMessage(body, "Regeneration failed - please refresh and try again."));
+        return;
+      }
+      setComment("");
+      setShowCommentBox(false);
+      router.refresh();
+    });
   }
 
   async function handleRevert() {
-    setBusy(true);
-    setError(null);
-    const { ok, body } = await apiFetch(`/api/proposals/${proposal.id}/sections/${section.section_key}/revert`, {
-      method: "POST",
+    await run(async () => {
+      setError(null);
+      const { ok, body } = await apiFetch(`/api/proposals/${proposal.id}/sections/${section.section_key}/revert`, {
+        method: "POST",
+      });
+      if (!ok) {
+        setError(apiErrorMessage(body, "Revert failed."));
+        return;
+      }
+      router.refresh();
     });
-    setBusy(false);
-    if (!ok) {
-      setError(apiErrorMessage(body, "Revert failed."));
-      return;
-    }
-    router.refresh();
   }
 
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-5">
+    <div id={`section-${section.section_key}`} className="scroll-mt-4 rounded-lg border border-neutral-200 bg-white p-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-neutral-900">{SECTION_LABELS[section.section_key]}</h2>
         <StatusPill status={section.generation_status} />
@@ -409,7 +541,7 @@ function SectionCard({
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div>
           <p className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-400">
             Submitted form fields
@@ -447,6 +579,21 @@ function SectionCard({
             <p className="whitespace-pre-wrap text-sm text-neutral-800">{section.content}</p>
           )}
         </div>
+
+        <div>
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-400">Suggestions</p>
+          {section.suggestions.length === 0 ? (
+            <p className="text-sm text-neutral-400 italic">Nothing to flag.</p>
+          ) : (
+            <ul className="list-disc space-y-1.5 pl-4">
+              {section.suggestions.map((s, i) => (
+                <li key={i} className="text-sm text-indigo-800">
+                  {s}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
 
       {editable && (
@@ -476,12 +623,22 @@ function SectionCard({
               {showCommentBox ? "Hide comment" : "Add context"}
             </button>
             <button
-              onClick={handleRegenerate}
+              onClick={() => handleRegenerate(false)}
               disabled={atCap || busy}
               className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-40"
             >
               {busy ? "Regenerating..." : `Regenerate (${section.regeneration_count}/${REGEN_CAP} used)`}
             </button>
+            {section.suggestions.length > 0 && (
+              <button
+                onClick={() => handleRegenerate(true)}
+                disabled={atCap || busy}
+                title="Regenerates using the suggestions in the column to the right as extra context - counts as one of the 5 attempts, same as any regeneration"
+                className="rounded-md border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+              >
+                {busy ? "Regenerating..." : "Regenerate with Suggestion"}
+              </button>
+            )}
             {section.previous_content && (
               <button
                 onClick={handleRevert}
@@ -519,27 +676,27 @@ function EditableField({
 }) {
   const router = useRouter();
   const [value, setValue] = useState(initialValue);
-  const [saving, setSaving] = useState(false);
+  const { busy: saving, run } = useGuardedAction();
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dirty = value !== initialValue;
 
   async function handleSave() {
-    setSaving(true);
-    setSaved(false);
-    setError(null);
-    const { ok, body } = await apiFetch(`/api/proposals/${proposalId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fields: { [field]: value } }),
+    await run(async () => {
+      setSaved(false);
+      setError(null);
+      const { ok, body } = await apiFetch(`/api/proposals/${proposalId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fields: { [field]: value } }),
+      });
+      if (!ok) {
+        setError(apiErrorMessage(body, "Failed to save this field."));
+        return;
+      }
+      setSaved(true);
+      router.refresh();
     });
-    setSaving(false);
-    if (!ok) {
-      setError(apiErrorMessage(body, "Failed to save this field."));
-      return;
-    }
-    setSaved(true);
-    router.refresh();
   }
 
   return (
