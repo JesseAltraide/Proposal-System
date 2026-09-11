@@ -22,6 +22,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!proposal) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Enforced server-side regardless of role - see approve/route.ts.
+  // Enforced server-side regardless of role - see approve/route.ts. With
+  // #57's multi-role accounts, this ID check alone already covers the
+  // same-email-both-roles case; the two-separate-accounts case (decision
+  // #40) stays an open policy question, not solved here.
   if (proposal.created_by === approver.id) {
     return NextResponse.json({ error: "You cannot reject your own proposal." }, { status: 403 });
   }

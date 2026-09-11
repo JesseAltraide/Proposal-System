@@ -78,7 +78,20 @@ export async function POST(
     );
   }
 
-  const [generated] = await generateProposalSections(proposal, [key], comment || undefined);
+  // Claude being down/erroring used to crash the request unhandled. Caught
+  // explicitly now - the existing section content is untouched either way
+  // (the update below only runs once Claude actually returns something), so
+  // this is just about giving a real "Claude isn't responding" message
+  // instead of a generic failure.
+  let generated;
+  try {
+    [generated] = await generateProposalSections(proposal, [key], comment || undefined);
+  } catch (err) {
+    return NextResponse.json(
+      { error: "Claude isn't responding right now. Your existing content is unchanged - try again in a moment." },
+      { status: 502 },
+    );
+  }
   if (!generated) {
     return NextResponse.json({ error: "Claude did not return content for this section." }, { status: 502 });
   }

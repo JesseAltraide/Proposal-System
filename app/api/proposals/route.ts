@@ -90,10 +90,25 @@ export async function POST(request: Request) {
 
   // qualifyingSections.length >= 2 is guaranteed here (checked above, before
   // the row was even created) - always generate.
-  const generated = await generateProposalSections(
-    { ...values, salesperson_name: user.fullName },
-    qualifyingSections,
-  );
+  //
+  // Claude being down/erroring here used to crash the request unhandled,
+  // leaving the just-inserted proposal row behind with no sections - a
+  // broken, permanently-empty draft the salesperson had no way to fix. Now
+  // caught explicitly: the orphaned row is deleted so the salesperson just
+  // sees a clean "try again" instead of a dead proposal cluttering their list.
+  let generated;
+  try {
+    generated = await generateProposalSections(
+      { ...values, salesperson_name: user.fullName },
+      qualifyingSections,
+    );
+  } catch (err) {
+    await supabase.from("proposals").delete().eq("id", proposal.id);
+    return NextResponse.json(
+      { error: "Claude isn't responding right now. Nothing was saved - try again in a moment." },
+      { status: 502 },
+    );
+  }
 
   const generatedByKey = new Map(generated.map((g) => [g.section_key, g]));
 

@@ -17,15 +17,28 @@ import type { ClientResponseStatus, Database } from "@/lib/supabase/database.typ
 type Proposal = Database["public"]["Tables"]["proposals"]["Row"];
 type Section = Database["public"]["Tables"]["proposal_sections"]["Row"];
 
+type FailedDelivery = {
+  event_type: string;
+  detail: string | null;
+  created_at: string;
+};
+
 const REGEN_CAP = 5;
 const SOFT_WARNING_ATTEMPT = 4;
+
+const DELIVERY_EVENT_LABELS: Record<string, string> = {
+  access_code_sent: "Client verification email",
+  client_notification_sent: "Client delivery email",
+};
 
 export function ProposalReviewClient({
   proposal,
   sections,
+  failedDeliveries,
 }: {
   proposal: Proposal;
   sections: Section[];
+  failedDeliveries: FailedDelivery[];
 }) {
   const router = useRouter();
   const isEditable = proposal.status === "draft" || proposal.status === "awaiting_reproposal";
@@ -79,6 +92,22 @@ export function ProposalReviewClient({
             <StatusBadge status={proposal.status} />
           </div>
         </div>
+
+        {failedDeliveries.length > 0 && (
+          <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            <strong>Heads up:</strong> {failedDeliveries.length === 1 ? "an email" : "emails"} to the client
+            failed to send. This won&apos;t catch every delivery problem (a bounce after the email is
+            accepted still won&apos;t show here), but a send the mail server rejected outright will.
+            <ul className="mt-2 list-disc pl-5">
+              {failedDeliveries.map((d, i) => (
+                <li key={i}>
+                  {DELIVERY_EVENT_LABELS[d.event_type] ?? d.event_type}
+                  {d.detail ? `: ${d.detail}` : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {(proposal.status === "draft" || proposal.status === "awaiting_reproposal") && proposal.approver_note && (
           <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">

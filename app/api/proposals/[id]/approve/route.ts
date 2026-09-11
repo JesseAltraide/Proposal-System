@@ -25,6 +25,15 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   // Enforced server-side regardless of role: a proposal's creator can never
   // approve their own work, even if that user somehow holds both roles
   // (build-spec's explicit requirement - not just "lacks approver role").
+  // Enforced server-side regardless of role: a proposal's creator can never
+  // approve their own work, even if that user somehow holds both roles
+  // (build-spec's explicit requirement - not just "lacks approver role").
+  // With #57's multi-role accounts, "same email holds both roles" collapses
+  // to "same account ID", so this ID check alone already covers that case -
+  // no separate role-history check needed. The remaining open case (decision
+  // #40) is the SAME human holding TWO SEPARATE accounts/emails, which is
+  // not detectable this way - see progress.md, flagged as a question, not
+  // solved here.
   if (proposal.created_by === approver.id) {
     return NextResponse.json({ error: "You cannot approve your own proposal." }, { status: 403 });
   }
