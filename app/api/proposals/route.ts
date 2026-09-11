@@ -3,7 +3,12 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { intakeFormSchema } from "@/lib/proposal/schema";
-import { runStructuralCheck, SECTION_ORDER } from "@/lib/proposal/sections";
+import {
+  CONTENT_FIELDS,
+  MIN_CONTENT_FIELDS_TO_GENERATE,
+  runStructuralCheck,
+  SECTION_ORDER,
+} from "@/lib/proposal/sections";
 import { generateProposalSections } from "@/lib/anthropic";
 import { generationCompleteEmail, sendMail } from "@/lib/email";
 import { extractTranscriptText, isSupportedTranscriptFile } from "@/lib/proposal/transcript-parser";
@@ -47,16 +52,25 @@ export async function POST(request: Request) {
 
   // Change (progress.md, 2026-09-10): what was previously a silent fallback
   // (create the draft anyway, mark every section `missing`) is now a hard
-  // rejection before any row is even created - matches the new client-side
-  // rule on the intake form. Revises decision #33's original behavior.
-  const structuralCheck = runStructuralCheck(values);
-  const qualifyingSections = SECTION_ORDER.filter((s) => structuralCheck[s].passed);
-  if (qualifyingSections.length < 2) {
+  // rejection before any row is even created - matches the client-side rule
+  // on the intake form. Revises decision #33's original behavior.
+  //
+  // Gate is on filled CONTENT_FIELDS directly (not qualifying sections below,
+  // a different count used only to decide which sections Claude generates) -
+  // corrected from an earlier "2" threshold that also didn't match this
+  // measure, per the user's explicit correction.
+  const filledContentFieldCount = CONTENT_FIELDS.filter((f) => values[f].trim().length > 0).length;
+  if (filledContentFieldCount < MIN_CONTENT_FIELDS_TO_GENERATE) {
     return NextResponse.json(
-      { error: "At least 2 proposal content fields need something written in them before you can generate a proposal." },
+      {
+        error: `At least ${MIN_CONTENT_FIELDS_TO_GENERATE} proposal content fields need something written in them before you can generate a proposal.`,
+      },
       { status: 400 },
     );
   }
+
+  const structuralCheck = runStructuralCheck(values);
+  const qualifyingSections = SECTION_ORDER.filter((s) => structuralCheck[s].passed);
 
   const supabase = await createClient();
 
@@ -88,8 +102,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: insertError?.message ?? "Failed to create proposal" }, { status: 500 });
   }
 
-  // qualifyingSections.length >= 2 is guaranteed here (checked above, before
-  // the row was even created) - always generate.
+  // filledContentFieldCount >= MIN_CONTENT_FIELDS_TO_GENERATE is guaranteed
+  // here (checked above, before the row was even created) - always generate.
   //
   // Claude being down/erroring here used to crash the request unhandled,
   // leaving the just-inserted proposal row behind with no sections - a

@@ -3,22 +3,15 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  CONTENT_FIELDS as OPTIONAL_FIELDS,
   FIELD_LABELS,
+  MIN_CONTENT_FIELDS_TO_GENERATE,
   SECTION_LABELS,
   sectionsRequiringField,
   type IntakeFieldKey,
 } from "@/lib/proposal/sections";
 import { parseCsv, mapCsvRow, describeRow, type ImportedIntakeValues } from "@/lib/proposal/csv-import";
 import { apiFetch, apiErrorMessage } from "@/lib/client-fetch";
-
-const OPTIONAL_FIELDS: IntakeFieldKey[] = [
-  "client_needs_summary",
-  "project_scope",
-  "goals_and_objectives",
-  "recommended_services",
-  "proposed_timeline",
-  "estimated_pricing",
-];
 
 const FIELD_HINTS: Record<IntakeFieldKey, string> = {
   client_needs_summary: "The problem the client wants to solve.",
@@ -107,13 +100,13 @@ export function NewProposalForm({ salespersonName }: { salespersonName: string }
   }
 
   const filledContentFieldCount = OPTIONAL_FIELDS.filter((f) => form[f].trim().length > 0).length;
-  const notEnoughContent = filledContentFieldCount < 2;
+  const notEnoughContent = filledContentFieldCount < MIN_CONTENT_FIELDS_TO_GENERATE;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
     if (notEnoughContent) {
-      setError("At least 2 of the proposal content fields need something written in them before you can generate a proposal.");
+      setError(`At least ${MIN_CONTENT_FIELDS_TO_GENERATE} of the proposal content fields need something written in them before you can generate a proposal.`);
       return;
     }
 
@@ -281,7 +274,7 @@ export function NewProposalForm({ salespersonName }: { salespersonName: string }
 
         {notEnoughContent && (
           <p className="text-sm text-amber-700">
-            At least 2 of the proposal content fields above need something written in them ({filledContentFieldCount}/2 so far) - a near-empty form isn&apos;t enough to generate anything from.
+            At least {MIN_CONTENT_FIELDS_TO_GENERATE} of the proposal content fields above need something written in them ({filledContentFieldCount}/{MIN_CONTENT_FIELDS_TO_GENERATE} so far) - a near-empty form isn&apos;t enough to generate anything from.
           </p>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}

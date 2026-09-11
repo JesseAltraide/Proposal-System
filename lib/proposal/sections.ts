@@ -13,6 +13,23 @@ export type IntakeFieldKey =
   | "proposed_timeline"
   | "estimated_pricing";
 
+// The 6 fillable proposal-content fields (excludes client-identity fields
+// like name/email/company, which are required separately and aren't part
+// of the "how much has actually been written" check).
+export const CONTENT_FIELDS: IntakeFieldKey[] = [
+  "client_needs_summary",
+  "project_scope",
+  "goals_and_objectives",
+  "recommended_services",
+  "proposed_timeline",
+  "estimated_pricing",
+];
+
+// Minimum number of CONTENT_FIELDS that must be filled before a proposal can
+// be generated at all - shared by the client-side form warning and the
+// server-side hard gate so the two numbers can never drift apart.
+export const MIN_CONTENT_FIELDS_TO_GENERATE = 4;
+
 export const SECTION_ORDER: SectionKey[] = [
   "introduction",
   "proposed_solution",
