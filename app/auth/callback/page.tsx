@@ -3,52 +3,41 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { processAuthFragment } from "@/lib/supabase/auth-fragment";
 
 // Handles both flow shapes Supabase can redirect back with after an invite,
 // magic-link, or recovery email is clicked:
 //
 // 1. Implicit flow: tokens embedded directly in the URL FRAGMENT
 //    (#access_token=...&refresh_token=...) - this is what admin-generated
-//    invite/recovery links actually use. Fragments never reach the server,
-//    so this can only be read and handled client-side (a server Route
-//    Handler here would never see them at all - see progress.md's
-//    Errors & Fixes log for the bug this replaced).
+//    invite/recovery links actually use. Handled by the shared
+//    processAuthFragment() helper (lib/supabase/auth-fragment.ts) - also
+//    used by /login, since a misconfigured Supabase Site URL can land the
+//    browser there instead of here (see that file's comment).
 // 2. PKCE flow: a `?code=` query param, exchanged for a session - kept as
-//    a fallback in case any future flow (e.g. OAuth) uses it.
+//    a fallback in case any future flow (e.g. OAuth) uses it. This one DOES
+//    reach the server (it's a query param, not a fragment), so it's less
+//    exposed to the same routing risk, but handled here for symmetry.
 export default function AuthCallbackPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function handle() {
-      const supabase = createClient();
-      const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-      const search = new URLSearchParams(window.location.search);
-
-      const hashError = hash.get("error_description") || hash.get("error");
-      if (hashError) {
-        setError(hashError);
-        return;
-      }
-
-      const accessToken = hash.get("access_token");
-      const refreshToken = hash.get("refresh_token");
-
-      if (accessToken && refreshToken) {
-        const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
-        if (error) {
-          setError(error.message);
-          return;
+      const fragmentResult = await processAuthFragment();
+      if (fragmentResult.handled) {
+        if (fragmentResult.error) {
+          setError(fragmentResult.error);
+        } else {
+          router.replace("/auth/set-password");
         }
-        router.replace("/auth/set-password");
         return;
       }
 
+      const search = new URLSearchParams(window.location.search);
       const code = search.get("code");
       if (code) {
+        const supabase = createClient();
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
           setError(error.message);

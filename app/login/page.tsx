@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { ensureRoleClaim } from "@/lib/supabase/role-sync";
+import { processAuthFragment } from "@/lib/supabase/auth-fragment";
 import { apiFetch, apiErrorMessage } from "@/lib/client-fetch";
 import type { UserRole } from "@/lib/supabase/database.types";
 
@@ -29,6 +30,33 @@ export default function LoginPage() {
   // two sign-in requests before the first setLoading(true) commits.
   const submittingRef = useRef(false);
   const enteringRoleRef = useRef(false);
+  // True only while checking for a leftover invite/recovery fragment on
+  // mount - see lib/supabase/auth-fragment.ts for why this page, not just
+  // /auth/callback, needs to handle this. Starts true so the plain login
+  // form never flashes before a redirect that's about to happen.
+  const [checkingFragment, setCheckingFragment] = useState(true);
+
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash.includes("access_token") && !hash.includes("error")) {
+      setCheckingFragment(false);
+      return;
+    }
+
+    (async () => {
+      const result = await processAuthFragment();
+      if (!result.handled) {
+        setCheckingFragment(false);
+        return;
+      }
+      if (result.error) {
+        setError(result.error);
+        setCheckingFragment(false);
+        return;
+      }
+      router.replace("/auth/set-password");
+    })();
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -101,6 +129,14 @@ export default function LoginPage() {
 
     router.push(ROLE_HOME[role]);
     router.refresh();
+  }
+
+  if (checkingFragment) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
+        <p className="text-sm text-neutral-500">Verifying...</p>
+      </div>
+    );
   }
 
   if (roleChoices) {
